@@ -2,8 +2,9 @@
 #ifdef HAS_AD9361_IIO
 #include <ad9361.h>
 #endif
+#include <cstring>
 
-static iio_context *ctx = nullptr; 
+static iio_context *ctx = nullptr;
 
 SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 	dev(nullptr), rx_dev(nullptr),tx_dev(nullptr), decimation(false), interpolation(false), rx_stream(nullptr)
@@ -11,17 +12,21 @@ SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 
 	gainMode = false;
 
+	for (auto &v : args)
+	{
+		SoapySDR_logf (SOAPY_SDR_INFO, "key: %s, val: %s\n", v.first.c_str(), v.second.c_str());
+	}
+
 	if (args.count("label") != 0)
 		SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
 
 	if(ctx == nullptr)
 	{
 	  if(args.count("uri") != 0) {
-
 		  ctx = iio_create_context_from_uri(args.at("uri").c_str());
-
 	  }else if(args.count("hostname")!=0){
-		  ctx = iio_create_network_context(args.at("hostname").c_str());
+			SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("hostname").c_str());
+			ctx = iio_create_network_context(args.at("hostname").c_str());
 	  }else{
 		  ctx = iio_create_default_context();
 	  }
@@ -291,15 +296,6 @@ std::string SoapyPlutoSDR::readSensor(const std::string &key) const
 /*******************************************************************
  * Settings API
  ******************************************************************/
-
-std::vector<std::string> Split(const std::string &subject)
-{
-	std::istringstream ss{subject};
-	using StrIt = std::istream_iterator<std::string>;
-	std::vector<std::string> container{StrIt{ss}, StrIt{}};
-	return container;
-}
-
 SoapySDR::ArgInfoList SoapyPlutoSDR::getSettingInfo(void) const
 {
 	SoapySDR::ArgInfoList setArgs;
@@ -422,7 +418,7 @@ std::string SoapyPlutoSDR::readSetting(const std::string &key) const
 {
 	std::string info;
 	char value[128];
-	ssize_t len;
+	int len = 0;
 
 	{
 		//std::lock_guard<pluto_spin_mutex> rx_lock(rx_device_mutex);
@@ -537,7 +533,7 @@ std::string SoapyPlutoSDR::readSetting(const int direction, const size_t channel
 {
 	std::string info;
 	char value[128]; // widest attr value seen is 95 chars
-	ssize_t len;
+	int len = 0;
 
 	if (direction == SOAPY_SDR_RX)
 	{
@@ -587,7 +583,7 @@ void SoapyPlutoSDR::setAntenna( const int direction, const size_t channel, const
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
 		iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", true), "rf_port_select", name.c_str());
 
-	} 
+	}
 }
 
 
@@ -825,7 +821,7 @@ void SoapyPlutoSDR::setSampleRate( const int direction, const size_t channel, co
 
 #ifdef HAS_AD9361_IIO
 	if(ad9361_set_bb_rate(dev,(unsigned long)samplerate))
-		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to set BB rate.");	
+		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to set BB rate.");
 #endif
 
 }
@@ -843,7 +839,7 @@ double SoapyPlutoSDR::getSampleRate( const int direction, const size_t channel )
 	}
 
 	else if(direction==SOAPY_SDR_TX){
-        
+
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
 
 		if(iio_channel_attr_read_longlong(iio_device_find_channel(tx_dev, "voltage0", true),"sampling_frequency",&samplerate)!=0)
