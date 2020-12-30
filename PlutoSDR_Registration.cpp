@@ -23,18 +23,16 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 		return results;
 	}
 	options["device"] = "plutosdr";
-
-	if (args.count("hostname")) {
-		//try to connect at the specified hostname
-		ctx = iio_create_network_context(args.at("hostname").c_str());
+	if (args.count("uri")) {
+		ctx = iio_create_context_from_uri(args.at("uri").c_str());
 		if(ctx == nullptr) return results; //failed to connect
-		options["hostname"] = args.at("hostname");
+		options["uri"] = args.at("uri");
 
-		sprintf(label_str, "%s #%d %s", options["device"].c_str(), 0, options["hostname"].c_str());
+		sprintf(label_str, "%s #%d %s", options["device"].c_str(), 0, options["uri"].c_str());
 		options["label"] = label_str;
 		results.push_back(options);
 		if (ctx != nullptr)iio_context_destroy(ctx);
-	}else{
+	} else{
 		for (int i = 0; i < ret; i++) {
 			ctx = iio_create_context_from_uri(iio_context_info_get_uri(info[i]));
 			if (ctx != nullptr) {
