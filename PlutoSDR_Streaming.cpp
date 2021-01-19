@@ -700,7 +700,7 @@ int tx_streamer::send(	const void * const *buffs,
 			float *samples_cf32 = (float *)buffs[index];
 
 			for (size_t j = 0; j < items; ++j) {
-				src = (int16_t)(samples_cf32[j*2+k] * 32767.999f); // 32767.999f (0x46ffffff) will ensure better distribution
+				src = (int16_t)(samples_cf32[j*2+k] * 8192.0f);
 				iio_channel_convert_inverse(chn, dst_ptr, src_ptr);
 				dst_ptr += buf_step;
 			}
