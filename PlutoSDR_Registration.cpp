@@ -13,6 +13,8 @@ static std::vector<SoapySDR::Kwargs> find_PlutoSDR(const SoapySDR::Kwargs &args)
 	iio_context_info **info;
 	SoapySDR::Kwargs options;
 
+	if (args.count("uri") != 0) return results;
+
 	scan_ctx = iio_create_scan_context(NULL, 0);
 	char label_str[100];
 	//Skipping broken USB device

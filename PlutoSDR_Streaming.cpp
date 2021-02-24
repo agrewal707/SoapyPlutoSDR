@@ -332,7 +332,12 @@ rx_streamer::rx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 				this->set_buffer_size(bufferLength);
 		}
 		catch (const std::invalid_argument &){}
-
+		
+		//Recompute MTU from buffer size change.
+		//We always set MTU size = Buffer Size.
+		//On buffer size adjustment to sample rate,
+		//MTU can be changed accordingly safely here.
+		set_mtu_size(this->buffer_size);
 	}else{
 
 		long long samplerate;
@@ -368,7 +373,7 @@ size_t rx_streamer::recv(void * const *buffs,
     //
 	if (items_in_buffer <= 0) {
 
-       // auto before = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+      //  auto before = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
 	    if (!buf) {
 		    return 0;
@@ -383,7 +388,7 @@ size_t rx_streamer::recv(void * const *buffs,
 
 		items_in_buffer = (unsigned long)ret / iio_buffer_step(buf);
 
-        // SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
+         //SoapySDR_logf(SOAPY_SDR_INFO, "iio_buffer_refill took %d ms to refill %d items", (int)(after - before), items_in_buffer);
 
 		byte_offset = 0;
 	}
@@ -607,7 +612,13 @@ tx_streamer::tx_streamer(const iio_device *_dev, const plutosdrStreamFormat _for
 		channel_list.push_back(chn);
 	}
 
-	buf_size = 4096;
+	if ( args.count( "bufflen" ) != 0 )
+		buf_size = std::stoi(args.at("bufflen"));
+	else
+		buf_size = 4096;
+
+	SoapySDR_logf(SOAPY_SDR_INFO, "tx buf size : %d", buf_size);
+
 	items_in_buf = 0;
 	buf = iio_device_create_buffer(dev, buf_size, false);
 	if (!buf) {
@@ -719,6 +730,7 @@ int tx_streamer::send(	const void * const *buffs,
 
 	items_in_buf += items;
 
+	//SoapySDR_logf(SOAPY_SDR_ERROR, "item in buf :%d, items: %d, numelems: %d", items_in_buf, items, numElems);
 	if (items_in_buf == buf_size || (flags & SOAPY_SDR_END_BURST && numElems == items)) {
 		int ret = send_buf();
 
@@ -761,6 +773,8 @@ int tx_streamer::send_buf()
 		if (ret < 0) {
 			return ret;
 		}
+
+		//SoapySDR_logf(SOAPY_SDR_ERROR, "FLUSHED");
 
 		return int(ret / iio_buffer_step(buf));
 	}

@@ -3,7 +3,10 @@
 #include <ad9361.h>
 #endif
 
-static iio_context *ctx = nullptr; 
+#include <cstring>
+#include <unistd.h>
+
+static iio_context *ctx = nullptr;
 
 SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 	dev(nullptr), rx_dev(nullptr),tx_dev(nullptr), decimation(false), interpolation(false), rx_stream(nullptr)
@@ -17,13 +20,11 @@ SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 	if(ctx == nullptr)
 	{
 	  if(args.count("uri") != 0) {
-
-		  ctx = iio_create_context_from_uri(args.at("uri").c_str());
-
+			ctx = iio_create_context_from_uri(args.at("uri").c_str());
 	  }else if(args.count("hostname")!=0){
-		  ctx = iio_create_network_context(args.at("hostname").c_str());
+			ctx = iio_create_network_context(args.at("hostname").c_str());
 	  }else{
-		  ctx = iio_create_default_context();
+			ctx = iio_create_default_context();
 	  }
 	}
 
@@ -43,6 +44,21 @@ SoapyPlutoSDR::SoapyPlutoSDR( const SoapySDR::Kwargs &args ):
 
 	this->setAntenna(SOAPY_SDR_RX, 0, "A_BALANCED");
 	this->setAntenna(SOAPY_SDR_TX, 0, "A");
+
+	if ( args.count( "rx_buf_count" ) != 0 ){
+		const size_t buf_count = std::stoi(args.at("rx_buf_count"));
+		if (iio_device_set_kernel_buffers_count(rx_dev, buf_count) != 0)
+			SoapySDR_logf(SOAPY_SDR_ERROR, "Error configuring kernel buffer count for RX!\n");
+	}
+
+	if ( args.count( "tx_buf_count" ) != 0 ){
+		const size_t buf_count = std::stoi(args.at("tx_buf_count"));
+		if (iio_device_set_kernel_buffers_count(tx_dev, buf_count) != 0)
+			SoapySDR_logf(SOAPY_SDR_ERROR, "Error configuring kernel buffer count for TX!\n");
+	}
+
+	stopped = false;
+	monitor_thread =  std::move (std::thread (&SoapyPlutoSDR::monitor, this));
 }
 
 SoapyPlutoSDR::~SoapyPlutoSDR(void){
@@ -59,13 +75,52 @@ SoapyPlutoSDR::~SoapyPlutoSDR(void){
 		iio_channel_attr_write_longlong(iio_device_find_channel(tx_dev, "voltage0", true),"sampling_frequency", samplerate);
 	}
 
+	stopped = true;
+	monitor_thread.join();
+
 	if(ctx)
 	{
 		iio_context_destroy(ctx);
 		ctx = nullptr;
 	}
+}
 
 
+// Monitors the TX and RX buffer for overflow/underflows
+// https://github.com/analogdevicesinc/libiio/blob/master/tests/iio_adi_xflow_check.c
+void SoapyPlutoSDR::monitor()
+{
+	uint32_t rxval, txval;
+	int ret;
+
+	/* Clear all status bits for TX and RX dev*/
+	iio_device_reg_write(tx_dev, 0x80000088, 0x6);
+	iio_device_reg_write(rx_dev, 0x80000088, 0x6);
+
+	while (!stopped) {
+		// Check TX device
+		ret = iio_device_reg_read(tx_dev, 0x80000088, &txval);
+		if (ret) {
+			SoapySDR_logf(SOAPY_SDR_ERROR,"Monitor: Failed to read status register: %s\n",
+					strerror(-ret));
+		} else if (txval & 1)
+			SoapySDR_logf(SOAPY_SDR_ERROR,"Monitor: TX DEVICE UNDERFLOW DETECTED!\n");
+
+		// Check RX device
+		ret = iio_device_reg_read(rx_dev, 0x80000088, &rxval);
+		if (ret) {
+			SoapySDR_logf(SOAPY_SDR_ERROR,"Monitor: Failed to read status register: %s\n",
+					strerror(-ret));
+		} else if (rxval & 4)
+			SoapySDR_logf(SOAPY_SDR_ERROR,"Monitor: RX DEVICE OVERFLOW DETECTED!\n");
+
+		/* Clear bits */
+		if (txval)
+			iio_device_reg_write(tx_dev, 0x80000088, txval);
+		if (rxval)
+			iio_device_reg_write(rx_dev, 0x80000088, rxval);
+		sleep(1);
+	}
 }
 
 /*******************************************************************
@@ -342,7 +397,7 @@ void SoapyPlutoSDR::setAntenna( const int direction, const size_t channel, const
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
 		iio_channel_attr_write(iio_device_find_channel(dev, "voltage0", true), "rf_port_select", name.c_str());
 
-	} 
+	}
 }
 
 
@@ -594,7 +649,8 @@ void SoapyPlutoSDR::setSampleRate( const int direction, const size_t channel, co
 
 #ifdef HAS_AD9361_IIO
 	if(ad9361_set_bb_rate(dev,(unsigned long)samplerate))
-		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to set BB rate.");	
+//	if(ad9361_set_bb_rate_custom_filter_manual(dev,(unsigned long)samplerate, 450000, 500000, 500000, 500000))
+		SoapySDR_logf(SOAPY_SDR_ERROR, "Unable to set BB rate.");
 #endif
 
 }
@@ -612,7 +668,7 @@ double SoapyPlutoSDR::getSampleRate( const int direction, const size_t channel )
 	}
 
 	else if(direction==SOAPY_SDR_TX){
-        
+
         std::lock_guard<pluto_spin_mutex> lock(tx_device_mutex);
 
 		if(iio_channel_attr_read_longlong(iio_device_find_channel(tx_dev, "voltage0", true),"sampling_frequency",&samplerate)!=0)

@@ -70,7 +70,7 @@ class tx_streamer {
 		std::vector<iio_channel* > channel_list;
 		const iio_device  *dev;
 		const plutosdrStreamFormat format;
-		
+
 		iio_buffer  *buf;
 		size_t buf_size;
 		size_t items_in_buf;
@@ -296,17 +296,19 @@ class SoapyPlutoSDR : public SoapySDR::Device{
 
 		std::vector<double> listBandwidths( const int direction, const size_t channel ) const;
 
-       
+
 
 	private:
 
         bool IsValidRxStreamHandle(SoapySDR::Stream* handle) const;
         bool IsValidTxStreamHandle(SoapySDR::Stream* handle) const;
-       
+
 		bool is_sensor_channel(struct iio_channel *chn) const;
 		double double_from_buf(const char *buf) const;
 		double get_sensor_value(struct iio_channel *chn) const;
 		std::string id_to_unit(const std::string &id) const;
+
+		void monitor ();
 
 		iio_device *dev;
 		iio_device *rx_dev;
@@ -320,6 +322,6 @@ class SoapyPlutoSDR : public SoapySDR::Device{
 		std::unique_ptr<rx_streamer> rx_stream;
         std::unique_ptr<tx_streamer> tx_stream;
 
-        
+    std::thread monitor_thread;
+		bool stopped;
 };
-
